@@ -1,5 +1,5 @@
-VERSION ?= v0.0.8
-REGISTRY ?= dgonzalez
+VERSION ?= v0.1.0
+REGISTRY ?= kubevirt
 
 CLUSTER_NAME ?= kubevirt
 KUBECONFIG := dev/kubeconfig
@@ -38,7 +38,7 @@ test:
 
 .PHONY: build
 build: bin
-	GOOS=linux go build -ldflags="-s -w" -o bin/kubevirt-cloud-controller-manager ./cmd/kubevirt-cloud-controller-manager
+	CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o bin/kubevirt-cloud-controller-manager ./cmd/kubevirt-cloud-controller-manager
 
 .PHONY:image
 image: build
