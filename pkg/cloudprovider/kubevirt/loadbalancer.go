@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/pointer"
 	kubevirtv1 "kubevirt.io/client-go/api/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -187,14 +188,14 @@ func (lb *loadbalancer) createLoadBalancerService(ctx context.Context, lbName st
 	ports := lb.createLoadBalancerServicePorts(service)
 	lbService := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      lbName,
-			Namespace: lb.namespace,
+			Name:        lbName,
+			Namespace:   lb.namespace,
 			Annotations: service.Annotations,
 		},
 		Spec: corev1.ServiceSpec{
-			Ports:    ports,
-			Selector: map[string]string{serviceLabelKey(lbName): service.ObjectMeta.Name},
-			Type:     corev1.ServiceTypeLoadBalancer,
+			Ports:                 ports,
+			Selector:              map[string]string{serviceLabelKey(lbName): service.ObjectMeta.Name},
+			Type:                  corev1.ServiceTypeLoadBalancer,
 			ExternalTrafficPolicy: service.Spec.ExternalTrafficPolicy,
 		},
 	}
@@ -265,6 +266,7 @@ func (lb *loadbalancer) applyServiceLabels(ctx context.Context, lbName, serviceN
 	// Apply labels to all found pods
 	for _, pod := range vmiPods.Items {
 		pod.ObjectMeta.Labels[serviceLabelKey(lbName)] = serviceName
+		pod.Spec.EnableServiceLinks = pointer.Bool(false)
 		if err := lb.client.Update(ctx, &pod); err != nil {
 			klog.Errorf("Failed to update pod %s: %v", pod.ObjectMeta.Name, err)
 		}
