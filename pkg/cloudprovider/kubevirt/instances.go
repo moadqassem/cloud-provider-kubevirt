@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"regexp"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -27,7 +26,7 @@ type instances struct {
 }
 
 // Must match providerIDs built by cloudprovider.GetInstanceProviderID
-var providerIDRegexp = regexp.MustCompile(`^` + ProviderName + `://([0-9A-Za-z_-]+)$`)
+var providerIDRegexp = regexp.MustCompile(`^` + ProviderName + `://([0-9A-Za-z_\.-]+)$`)
 
 // NodeAddresses returns the addresses of the specified instance.
 // TODO(roberthbailey): This currently is only used in such a way that it
@@ -233,8 +232,10 @@ func (i *instances) InstanceShutdownByProviderID(ctx context.Context, providerID
 // instanceIDFromNodeName extracts the instance ID from a given node name. In
 // case the node name is a FQDN the hostname will be extracted as instance ID.
 func instanceIDFromNodeName(nodeName string) string {
-	data := strings.SplitN(nodeName, ".", 2)
-	return data[0]
+	// TODO:(mfranczy) Kubermatic has a different pattern than Gardener, that's why the below code is commented
+	//data := strings.SplitN(nodeName, ".", 2)
+	//return data[0]
+	return nodeName
 }
 
 func instanceIDsFromNodes(nodes []*corev1.Node) []string {
