@@ -32,6 +32,7 @@ type CloudConfig struct {
 	LoadBalancer LoadBalancerConfig `yaml:"loadbalancer"`
 	Instances    InstancesConfig    `yaml:"instances"`
 	Zones        ZonesConfig        `yaml:"zones"`
+	Namespace    string             `yaml:"namespace"`
 }
 
 type LoadBalancerConfig struct {
@@ -96,10 +97,13 @@ func kubevirtCloudProviderFactory(config io.Reader) (cloudprovider.Interface, er
 	if err != nil {
 		return nil, err
 	}
-	namespace, _, err := clientConfig.Namespace()
-	if err != nil {
-		klog.Errorf("Could not find namespace in client config: %v", err)
-		return nil, err
+	namespace := cloudConf.Namespace
+	if cloudConf.Namespace == "" {
+		namespace, _, err = clientConfig.Namespace()
+		if err != nil {
+			klog.Errorf("Could not find namespace in client config: %v", err)
+			return nil, err
+		}
 	}
 	c, err := client.New(restConfig, client.Options{})
 	if err != nil {
