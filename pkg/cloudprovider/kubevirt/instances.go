@@ -66,21 +66,31 @@ func (i *instances) nodeAddressesByInstanceID(ctx context.Context, instanceID st
 	}
 
 	for _, netIface := range vmi.Status.Interfaces {
-		// TODO(dgonzalez): We currently assume that all IPs assigned to interfaces
-		// are internal IP addresses. In the future this function must be extended
-		// to detect the type of the address properly.
-		if netIface.IP != "" {
+		if netIface.IP != "" && netIface.Name == "default" {
 			v1helper.AddToNodeAddresses(&addresses, corev1.NodeAddress{
 				Type:    corev1.NodeInternalIP,
 				Address: netIface.IP,
 			})
+			break
 		}
-		for _, ip := range netIface.IPs {
-			v1helper.AddToNodeAddresses(&addresses, corev1.NodeAddress{
-				Type:    corev1.NodeInternalIP,
-				Address: ip,
-			})
-		}
+
+		// This snippet was commented due to the issue of kkp dnat-controller reported by this ticket:
+		// https://github.com/kubermatic/kubermatic/issues/9382.
+		// TODO(dgonzalez): We currently assume that all IPs assigned to interfaces
+		// are internal IP addresses. In the future this function must be extended
+		// to detect the type of the address properly.
+		//if netIface.IP != "" {
+		//	v1helper.AddToNodeAddresses(&addresses, corev1.NodeAddress{
+		//		Type:    corev1.NodeInternalIP,
+		//		Address: netIface.IP,
+		//	})
+		//}
+		//for _, ip := range netIface.IPs {
+		//	v1helper.AddToNodeAddresses(&addresses, corev1.NodeAddress{
+		//		Type:    corev1.NodeInternalIP,
+		//		Address: ip,
+		//	})
+		//}
 	}
 	return addresses, nil
 }
