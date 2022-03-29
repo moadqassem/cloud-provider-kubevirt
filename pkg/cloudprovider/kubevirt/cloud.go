@@ -2,12 +2,19 @@ package kubevirt
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/pointer"
 
 	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/klog/v2"
@@ -28,9 +35,10 @@ func init() {
 }
 
 type cloud struct {
-	namespace string
-	client    client.Client
-	config    CloudConfig
+	namespace            string
+	client               client.Client
+	managedClusterClient *kubernetes.Clientset
+	config               CloudConfig
 }
 
 type CloudConfig struct {
@@ -127,6 +135,14 @@ func kubevirtCloudProviderFactory(config io.Reader) (cloudprovider.Interface, er
 // Initialize provides the cloud with a kubernetes client builder and may spawn goroutines
 // to perform housekeeping activities within the cloud provider.
 func (c *cloud) Initialize(clientBuilder cloudprovider.ControllerClientBuilder, stop <-chan struct{}) {
+	clientBuilder.ConfigOrDie("")
+	clientSet, err := kubernetes.NewForConfig(clientBuilder.ConfigOrDie(""))
+	if err != nil {
+		klog.Fatalf("Failed to intialize cloud provider client: %v", err)
+	}
+
+	c.managedClusterClient = clientSet
+	go c.syncEP(context.TODO())
 }
 
 // LoadBalancer returns a balancer interface. Also returns true if the interface is supported, false otherwise.
@@ -134,10 +150,12 @@ func (c *cloud) LoadBalancer() (cloudprovider.LoadBalancer, bool) {
 	if !c.config.LoadBalancer.Enabled {
 		return nil, false
 	}
+
 	return &loadbalancer{
-		namespace: c.namespace,
-		client:    c.client,
-		config:    c.config.LoadBalancer,
+		namespace:           c.namespace,
+		cloudProviderClient: c.client,
+		client:              c.managedClusterClient,
+		config:              c.config.LoadBalancer,
 	}, true
 }
 
@@ -186,4 +204,89 @@ func (c *cloud) ProviderName() string {
 // HasClusterID returns true if a ClusterID is required and set
 func (c *cloud) HasClusterID() bool {
 	return true
+}
+
+func (c *cloud) syncEP(ctx context.Context) {
+	watcher, err := c.managedClusterClient.CoreV1().Pods("").Watch(ctx, metav1.ListOptions{})
+	if err != nil {
+		klog.Errorf("failed to create watcher for all pods: %v", err)
+	}
+
+	for event := range watcher.ResultChan() {
+		switch event.Object.(type) {
+		case *corev1.Pod:
+			pod := event.Object.(*corev1.Pod)
+
+			services, err := c.managedClusterClient.CoreV1().Services(pod.Namespace).List(ctx, metav1.ListOptions{
+				LabelSelector: labels.SelectorFromSet(pod.Labels).String(),
+			})
+			if err != nil {
+				klog.Error(err)
+			}
+
+			vmi := &kubevirtv1.VirtualMachineInstance{}
+			if err := c.client.Get(ctx, types.NamespacedName{Name: pod.Spec.NodeName, Namespace: c.namespace}, vmi); err != nil {
+				klog.Error(err)
+			}
+
+			var (
+				virtPods = &corev1.PodList{}
+				virtPod  = corev1.Pod{}
+			)
+			if err := c.client.List(ctx, virtPods, nil); err != nil {
+				klog.Error(err)
+			}
+
+			for _, p := range virtPods.Items {
+				if p.Annotations["kubevirt.io/domain"] == vmi.Name {
+					virtPod = p
+					break
+				}
+			}
+
+			for _, svc := range services.Items {
+				if svc.Spec.Type != corev1.ServiceTypeLoadBalancer {
+					continue
+				}
+
+				kvLBEndpoints := &corev1.Endpoints{}
+				if err := c.client.Get(ctx,
+					types.NamespacedName{Name: cloudprovider.DefaultLoadBalancerName(&svc), Namespace: c.namespace},
+					kvLBEndpoints); err != nil {
+					klog.Error(err)
+				}
+
+				for _, sub := range kvLBEndpoints.Subsets {
+					for _, addr := range sub.Addresses {
+						if addr.IP == pod.Status.PodIP {
+							continue
+						}
+
+						ep := corev1.EndpointAddress{
+							IP:       pod.Status.HostIP,
+							NodeName: pointer.String(pod.Spec.NodeName),
+							TargetRef: &corev1.ObjectReference{
+								Kind:            "Pod",
+								Name:            virtPod.Name,
+								Namespace:       c.namespace,
+								ResourceVersion: pod.ResourceVersion,
+								UID:             pod.UID,
+							},
+						}
+
+						sub.Addresses = append(sub.Addresses, ep)
+
+					}
+				}
+
+				if err := c.client.Update(ctx, kvLBEndpoints); err != nil {
+					klog.Error(err)
+				}
+
+			}
+
+		default:
+			klog.Warning("unexpected enqueued object: only objetcs of type Pod is expected")
+		}
+	}
 }
