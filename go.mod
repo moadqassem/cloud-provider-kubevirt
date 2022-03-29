@@ -6,15 +6,15 @@ require (
 	github.com/golang/mock v1.6.0
 	github.com/spf13/pflag v1.0.5
 	gopkg.in/yaml.v2 v2.4.0
-	k8s.io/api v0.21.3
-	k8s.io/apimachinery v0.21.3
+	k8s.io/api v0.21.2
+	k8s.io/apimachinery v0.21.2
 	k8s.io/client-go v12.0.0+incompatible
 	k8s.io/cloud-provider v0.21.2
-	k8s.io/component-base v0.21.3
+	k8s.io/component-base v0.21.2
 	k8s.io/klog/v2 v2.9.0
-	k8s.io/utils v0.0.0-20210722164352-7f3ee0f31471
+	k8s.io/utils v0.0.0-20210527160623-6fdb442a123b
 	kubevirt.io/client-go v0.43.0
-	sigs.k8s.io/controller-runtime v0.9.6
+	sigs.k8s.io/controller-runtime v0.9.2
 )
 
 replace (
